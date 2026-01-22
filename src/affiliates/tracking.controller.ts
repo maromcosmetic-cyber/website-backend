@@ -8,13 +8,13 @@ import {
   Req,
   BadRequestException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { TrackingService } from './tracking.service';
 import { TrackClickDto } from './dto/track-click.dto';
 
 @Controller('affiliate')
 export class TrackingController {
-  constructor(private readonly trackingService: TrackingService) {}
+  constructor(private readonly trackingService: TrackingService) { }
 
   @Post('track-click')
   async trackClick(@Body() trackClickDto: TrackClickDto, @Req() request: Request) {
@@ -53,7 +53,7 @@ export class TrackingController {
 // Admin controller for tracking analytics
 @Controller('admin/tracking')
 export class AdminTrackingController {
-  constructor(private readonly trackingService: TrackingService) {}
+  constructor(private readonly trackingService: TrackingService) { }
 
   @Get('clicks')
   async getAllClicks(

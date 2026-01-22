@@ -5,11 +5,16 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(private readonly ordersService: OrdersService) { }
 
   @Post()
   create(@Body() createOrderDto: CreateOrderDto) {
     return this.ordersService.create(createOrderDto);
+  }
+
+  @Post('notify')
+  async notifyNewOrder(@Body() orderData: any) {
+    return this.ordersService.sendNewOrderNotification(orderData);
   }
 
   @Get()

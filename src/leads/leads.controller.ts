@@ -5,11 +5,16 @@ import { UpdateLeadDto } from './dto/update-lead.dto';
 
 @Controller('leads')
 export class LeadsController {
-  constructor(private readonly leadsService: LeadsService) {}
+  constructor(private readonly leadsService: LeadsService) { }
 
   @Post()
   create(@Body() createLeadDto: CreateLeadDto) {
     return this.leadsService.create(createLeadDto);
+  }
+
+  @Post('notify')
+  async notifyNewLead(@Body() body: { email: string }) {
+    return this.leadsService.sendNewLeadNotification(body.email);
   }
 
   @Get()

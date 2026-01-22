@@ -6,8 +6,11 @@ import { TrackingService } from './tracking.service';
 import { CommissionsController, AdminCommissionsController } from './commissions.controller';
 import { CommissionsService } from './commissions.service';
 import { SupabaseService } from './supabase.service';
+import { EmailModule } from '../email/email.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
+  imports: [EmailModule, WhatsappModule],
   controllers: [
     AffiliatesController,
     AdminAffiliatesController,
@@ -19,4 +22,4 @@ import { SupabaseService } from './supabase.service';
   providers: [AffiliatesService, TrackingService, CommissionsService, SupabaseService],
   exports: [AffiliatesService, TrackingService, CommissionsService, SupabaseService],
 })
-export class AffiliatesModule {}
+export class AffiliatesModule { }
