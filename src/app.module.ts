@@ -11,6 +11,7 @@ import { AffiliatesModule } from './affiliates/affiliates.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { ContactModule } from './contact/contact.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { ContactModule } from './contact/contact.module';
     CouponsModule,
     CouponsModule,
     WhatsappModule,
-    ContactModule
+    ContactModule,
+    EmailModule
   ],
   controllers: [AppController],
   providers: [AppService],

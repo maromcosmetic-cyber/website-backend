@@ -1,131 +1,188 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-
-interface EmailOptions {
-    to: string;
-    subject: string;
-    text: string;
-    html: string;
-}
+import { createClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class EmailService {
     private readonly logger = new Logger(EmailService.name);
-    private cachedTransporter: nodemailer.Transporter | null = null;
-    private cachedConfigKey: string = '';
-    private supabase: SupabaseClient;
 
-    constructor() {
+    constructor() { }
+
+    private async getTransporter() {
+        // 1. Fetch SMTP settings from DB (content_blocks)
         const supabaseUrl = process.env.SUPABASE_URL;
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-        if (!supabaseUrl || !serviceRoleKey) {
-            this.logger.error('Supabase credentials missing for EmailService');
-            // We don't throw immediately to avoid crashing app start, but sending will fail
-        } else {
-            this.supabase = createClient(supabaseUrl, serviceRoleKey);
-        }
-    }
-
-    async sendEmail({ to, subject, text, html }: EmailOptions): Promise<void> {
-        if (!this.supabase) {
-            throw new Error('Supabase client not initialized in EmailService');
+        if (!supabaseUrl || !supabaseKey) {
+            this.logger.error('Supabase credentials missing.');
+            return null;
         }
 
-        // 1. Fetch SMTP Settings
-        const { data: smtpData, error: smtpError } = await this.supabase
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        const { data } = await supabase
             .from('content_blocks')
             .select('content')
             .eq('section_key', 'smtp_config')
             .single();
 
-        if (smtpError || !smtpData) {
-            this.logger.error(`Failed to fetch SMTP settings: ${smtpError?.message}`);
-            throw new Error('SMTP Configuration not found.');
+        if (!data?.content) {
+            this.logger.warn('No SMTP settings found in content_blocks (key: smtp_config).');
+            return null;
         }
 
-        let config;
         try {
-            config = JSON.parse(smtpData.content);
-        } catch (e) {
-            throw new Error('Invalid SMTP Configuration format.');
-        }
+            const config = JSON.parse(data.content);
+            if (!config.host || !config.user || !config.pass) {
+                this.logger.warn('SMTP config found but missing required fields (host, user, pass).');
+                return null;
+            }
 
-        if (!config.host || !config.user || !config.pass) {
-            throw new Error('Incomplete SMTP Configuration.');
-        }
-
-        // Generate a key to identify if config changed
-        const configKey = `${config.host}:${config.user}:${config.port}`;
-
-        // 2. Create or Reuse Transporter
-        if (!this.cachedTransporter || this.cachedConfigKey !== configKey) {
-            this.cachedTransporter = nodemailer.createTransport({
+            // 2. Create Nodemailer transporter
+            const transporter = nodemailer.createTransport({
                 host: config.host,
                 port: Number(config.port) || 587,
-                secure: Number(config.port) === 465,
+                secure: Number(config.port) === 465, // true for 465, false for other ports
                 auth: {
                     user: config.user,
                     pass: config.pass,
                 },
-                tls: {
-                    rejectUnauthorized: false,
-                },
-                pool: true,
-                maxConnections: 5,
-                maxMessages: 100,
             });
 
-            this.cachedConfigKey = configKey;
-            this.logger.log('Created new SMTP transporter instance');
+            return { transporter, config };
+        } catch (err) {
+            this.logger.error('Failed to parse SMTP config from DB', err);
+            return null;
         }
-
-        // 3. Send Email
-        const brandedHtml = this.wrapInTemplate(html);
-
-        await this.cachedTransporter.sendMail({
-            from: `"${config.senderName || 'Marom Wellness'}" <${config.fromEmail || config.user}>`,
-            to,
-            subject,
-            text,
-            html: brandedHtml,
-        });
-
-        this.logger.log(`Email sent to ${to}`);
     }
 
-    private wrapInTemplate(content: string) {
-        return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            body { font-family: 'Times New Roman', serif; color: #1F2937; line-height: 1.6; background-color: #FDFBF7; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
-            .header { background-color: #015030; color: #FDB723; padding: 30px; text-align: center; }
-            .logo { font-size: 28px; letter-spacing: 0.15em; font-weight: bold; font-family: sans-serif; }
-            .content { padding: 40px 30px; }
-            .footer { background-color: #F8F5F2; padding: 20px; text-align: center; font-size: 12px; color: #6B7280; letter-spacing: 0.1em; }
-            .button { display: inline-block; background-color: #FDB723; color: #015030; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px; margin-top: 20px; }
-            h1 { color: #015030; margin-top: 0; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <div class="logo">MAROM</div>
-                <div style="font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; margin-top: 5px; opacity: 0.8;">Natural Holistic Products</div>
-            </div>
-            <div class="content">
-                ${content}
-            </div>
-            <div class="footer">
-                <p>&copy; ${new Date().getFullYear()} MAROM COSMETIC<br>Natural Intention</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    `;
+    async sendOrderNotification(order: any) {
+        const result = await this.getTransporter();
+        if (!result) return;
+        const { transporter, config } = result;
+
+        const locale = order.locale || 'en';
+        const isHebrew = locale === 'he';
+        const currency = order.currency || 'THB';
+        const currencySymbol = currency === 'ILS' ? '₪' : '฿';
+
+        // Templates
+        const subjects = {
+            en: {
+                admin: `New Order #${order.id.slice(0, 8)} - ${currencySymbol}${order.total_amount}`,
+                customer: `Order Confirmation #${order.id.slice(0, 8)} - Marom Cosmetics`
+            },
+            he: {
+                admin: `הזמנה חדשה #${order.id.slice(0, 8)} - ${currencySymbol}${order.total_amount}`,
+                customer: `אישור הזמנה #${order.id.slice(0, 8)} - מרום קוסמטיקה`
+            }
+        };
+
+        const templates = {
+            en: `
+                <h1>Thank you for your order!</h1>
+                <p>Hi there,</p>
+                <p>We have received your order and are processing it.</p>
+                <hr />
+                <h3>Order Details:</h3>
+                <ul>
+                    <li><strong>Order ID:</strong> ${order.id}</li>
+                    <li><strong>Amount:</strong> ${currencySymbol}${order.total_amount?.toLocaleString()}</li>
+                </ul>
+                <h3>Items:</h3>
+                <ul>
+                    ${order.items?.map((item: any) => `<li>${item.quantity}x ${item.name}</li>`).join('')}
+                </ul>
+                <p>We will notify you when your items ship.</p>
+            `,
+            he: `
+                <div dir="rtl" style="text-align: right;">
+                    <h1>תודה על הזמנתך!</h1>
+                    <p>שלום,</p>
+                    <p>קיבלנו את ההזמנה שלך ואנו מטפלים בה כעת.</p>
+                    <hr />
+                    <h3>פרטי ההזמנה:</h3>
+                    <ul>
+                        <li><strong>מספר הזמנה:</strong> ${order.id}</li>
+                        <li><strong>סכום לתשלום:</strong> ${currencySymbol}${order.total_amount?.toLocaleString()}</li>
+                    </ul>
+                    <h3>פריטים:</h3>
+                    <ul>
+                        ${order.items?.map((item: any) => `<li>${item.quantity}x ${item.name}</li>`).join('')}
+                    </ul>
+                    <p>אנו נודיע לך כאשר הפריטים יצאו למשלוח.</p>
+                </div>
+            `
+        };
+
+        try {
+            // Prepare email promises
+            const emailPromises = [];
+
+            // 3. Admin Notification (Always English or Hebrew? Let's use English for Admin for now, or maybe based on order locale? Let's stick to English for Admin unless requested otherwise, but user said "admin mail wasnt save" implying checking. I'll keep Admin in English for consistency or maybe add Hebrew if locale is HE. Let's use English for Admin for global team.)
+            emailPromises.push(
+                transporter.sendMail({
+                    from: `"Marom Cosmetics" <${config.user}>`,
+                    to: 'maromcosmetic@gmail.com',
+                    subject: subjects.en.admin,
+                    html: `
+                        <h1>New Order Received!</h1>
+                        <p>You have received a new order from <strong>${order.email}</strong>.</p>
+                        <p><strong>Locale:</strong> ${locale}</p>
+                        <hr />
+                        <h3>Order Details:</h3>
+                        <ul>
+                            <li><strong>Order ID:</strong> ${order.id}</li>
+                            <li><strong>Amount:</strong> ${currencySymbol}${order.total_amount?.toLocaleString()}</li>
+                            <li><strong>Status:</strong> ${order.status}</li>
+                        </ul>
+                        <h3>Items:</h3>
+                        <ul>
+                            ${order.items?.map((item: any) => `<li>${item.quantity}x ${item.name}</li>`).join('')}
+                        </ul>
+                    `
+                }).then(info => this.logger.log(`Admin notification sent: ${info.messageId}`))
+            );
+
+            // 4. Customer Confirmation
+            if (order.email) {
+                const customerSubject = isHebrew ? subjects.he.customer : subjects.en.customer;
+                const customerHtml = isHebrew ? templates.he : templates.en;
+
+                emailPromises.push(
+                    transporter.sendMail({
+                        from: `"Marom Cosmetics" <${config.user}>`,
+                        to: order.email,
+                        subject: customerSubject,
+                        html: customerHtml
+                    }).then(info => this.logger.log(`Customer confirmation sent to ${order.email}: ${info.messageId}`))
+                );
+            }
+
+            // Execute in parallel
+            await Promise.all(emailPromises);
+
+            this.logger.log(`Admin notification sent for order ${order.id}`);
+        } catch (err) {
+            this.logger.error('Error sending email:', err);
+        }
+    }
+
+    async sendEmail(options: { to: string; subject: string; html: string; text?: string }) {
+        const result = await this.getTransporter();
+        if (!result) return;
+        const { transporter, config } = result;
+
+        try {
+            const info = await transporter.sendMail({
+                from: `"Marom Cosmetics" <${config.user}>`,
+                to: options.to,
+                subject: options.subject,
+                html: options.html,
+                text: options.text
+            });
+            this.logger.log(`Generic email sent: ${info.messageId}`);
+        } catch (err) {
+            this.logger.error('Error sending generic email:', err);
+        }
     }
 }
