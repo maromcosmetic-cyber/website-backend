@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
@@ -6,10 +8,21 @@ export class WhatsappService {
     private readonly phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
     private readonly accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     private readonly adminNumbers = (process.env.WHATSAPP_ADMIN_NUMBERS || '').split(',').map(n => n.trim());
+    private readonly logFile = path.join(process.cwd(), 'whatsapp-logs.txt');
 
     constructor() {
         if (!this.phoneNumberId || !this.accessToken || this.adminNumbers.length === 0) {
             this.logger.warn('WhatsApp credentials or admin numbers are missing. Notifications will not be sent.');
+        }
+    }
+
+    private logToFile(message: string) {
+        const timestamp = new Date().toISOString();
+        const logLine = `[${timestamp}] ${message}\n`;
+        try {
+            fs.appendFileSync(this.logFile, logLine);
+        } catch (err) {
+            console.error('Failed to write to WhatsApp log file', err);
         }
     }
 
@@ -51,8 +64,13 @@ export class WhatsappService {
 
     private async sendMessage(to: string, body: string): Promise<void> {
 
+        // Sanitize body for Template parameter (Meta strict rules: no newlines, char limit)
+        // We take the first line and limit to 60 chars.
+        // Example input: "New Contact Form Submission:\nName: John..."
+        // Result: "New Contact Form Submission"
+        const templateParam = body.split('\n')[0].replace(/[:\s]+$/, '').substring(0, 60) || 'New Update';
+
         // Strategy 1: Universal Delivery via Utility Template (admin_alert_v2)
-        // This works even if the 24-hour window is closed.
         try {
             await this.callMetaApi({
                 messaging_product: 'whatsapp',
@@ -60,26 +78,32 @@ export class WhatsappService {
                 to: to,
                 type: 'template',
                 template: {
-                    name: 'admin_alert_v2',
-                    language: { code: 'en_US' },
+                    name: 'admin_alert_v2', // Matches user screenshot
+                    language: { code: 'en' }, // Changed from en_US to en to match "English"
                     components: [
                         {
                             type: 'body',
                             parameters: [
-                                { type: 'text', text: body }
+                                { type: 'text', text: templateParam }
                             ]
                         }
                     ]
                 }
             });
             this.logger.log(`WhatsApp notification (Template) sent to ${to}`);
+            this.logToFile(`SUCCESS: Template notification sent to ${to}`);
             return;
         } catch (templateError) {
-            this.logger.warn(`Template send failed for ${to} (${templateError.message}), falling back to text message.`);
+            // Enhanced logging to see the exact reason from Meta
+            this.logger.warn(`Template send failed for ${to}. Reason: ${templateError.message}`);
+            this.logToFile(`WARNING: Template failed for ${to}: ${templateError.message}`);
+            if (templateError.response) {
+                this.logger.warn(`Meta API Error Details: ${JSON.stringify(templateError.response)}`);
+                this.logToFile(`DETAILS: ${JSON.stringify(templateError.response)}`);
+            }
         }
 
-        // Strategy 2: Fallback to Plain Text
-        // Only works if the admin has messaged the bot recently (24-hour window).
+        // Strategy 2: Fallback to Plain Text (24h window only)
         try {
             await this.callMetaApi({
                 messaging_product: 'whatsapp',
@@ -89,14 +113,14 @@ export class WhatsappService {
                 text: { body: body }
             });
             this.logger.log(`WhatsApp notification (Text Fallback) sent to ${to}`);
+            this.logToFile(`SUCCESS: Text Fallback sent to ${to}`);
             return;
         } catch (textError) {
-            this.logger.error(`Text message send also failed for ${to}`, textError);
+            this.logger.error(`Text message send also failed for ${to}: ${textError.message}`);
+            this.logToFile(`ERROR: Text Fallback failed for ${to}: ${textError.message}`);
         }
 
         // Strategy 3: Ultimate Fallback "Ping" (hello_world)
-        // If everything else fails, send the generic "hello_world" which is always approved.
-        // This alerts the admin to check the dashboard manually.
         try {
             await this.callMetaApi({
                 messaging_product: 'whatsapp',
@@ -109,8 +133,10 @@ export class WhatsappService {
                 }
             });
             this.logger.log(`WhatsApp notification (Ping Fallback) sent to ${to}`);
+            this.logToFile(`SUCCESS: Ping Fallback sent to ${to}`);
         } catch (pingError) {
             this.logger.error(`Even the Ping failed for ${to}`, pingError);
+            this.logToFile(`CRITICAL: All methods failed for ${to}: ${pingError.message}`);
         }
     }
 }
