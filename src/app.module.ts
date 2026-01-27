@@ -12,6 +12,7 @@ import { CouponsModule } from './coupons/coupons.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { ContactModule } from './contact/contact.module';
 import { EmailModule } from './email/email.module';
+import { WoocommerceModule } from './woocommerce/woocommerce.module';
 
 @Module({
   imports: [
@@ -26,7 +27,8 @@ import { EmailModule } from './email/email.module';
     CouponsModule,
     WhatsappModule,
     ContactModule,
-    EmailModule
+    EmailModule,
+    WoocommerceModule
   ],
   controllers: [AppController],
   providers: [AppService],

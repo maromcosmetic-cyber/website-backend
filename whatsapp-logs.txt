@@ -1,0 +1,6 @@
+[2026-01-26T15:17:16.423Z] WARNING: Template failed for 972502235338: (#132018) There’s an issue with the parameters in your template
+[2026-01-26T15:17:16.427Z] WARNING: Template failed for 972533608971: (#132018) There’s an issue with the parameters in your template
+[2026-01-26T15:17:17.258Z] SUCCESS: Text Fallback sent to 972533608971
+[2026-01-26T15:17:17.460Z] SUCCESS: Text Fallback sent to 972502235338
+[2026-01-26T15:20:11.732Z] SUCCESS: Template notification sent to 972533608971
+[2026-01-26T15:20:11.755Z] SUCCESS: Template notification sent to 972502235338
