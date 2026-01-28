@@ -22,14 +22,11 @@ export class WoocommerceSupabaseService {
 
     // Use service role key for write operations
     getAdminClient(): SupabaseClient {
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        // HARDCODED FIX FOR DEBUGGING
+        const supabaseUrl = "https://psswhtcpjenmbztlbilo.supabase.co";
+        const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzc3dodGNwamVubWJ6dGxiaWxvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODQ4OTMyOCwiZXhwIjoyMDg0MDY1MzI4fQ.0v9qQHBoKSR195m-0m7seIKbVIHq2CVR_yCg82XLXU4";
 
-        if (!supabaseUrl || !serviceRoleKey) {
-            console.warn('Service role key not available, using regular client');
-            return this.supabase;
-        }
-
+        console.log(`Supabase Service Debug: URL=${supabaseUrl}, ServiceKey=${serviceRoleKey ? 'Present' : 'Missing'}`);
         return createClient(supabaseUrl, serviceRoleKey);
     }
 }

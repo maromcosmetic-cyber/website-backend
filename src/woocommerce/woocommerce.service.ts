@@ -11,6 +11,24 @@ export class WoocommerceService {
 
     // Map Supabase Product to WooCommerce Format
     private mapToWooCommerce(product: any) {
+        const meta_data = [
+            {
+                id: 0,
+                key: 'price_ils',
+                value: product.price_ils?.toString() || ''
+            }
+        ];
+
+        if (product.name_he) {
+            meta_data.push({ id: 0, key: 'name_he', value: product.name_he });
+        }
+        if (product.description_he) {
+            meta_data.push({ id: 0, key: 'description_he', value: product.description_he });
+        }
+        if (product.short_description_he) {
+            meta_data.push({ id: 0, key: 'short_description_he', value: product.short_description_he });
+        }
+
         return {
             id: product.id,
             name: product.name,
@@ -29,6 +47,7 @@ export class WoocommerceService {
             stock_status: product.stock_status,
             images: product.images || [],
             categories: product.categories || [],
+            meta_data: meta_data,
             // Standard dummy fields to satisfy strict clients
             date_created: product.created_at,
             date_modified: product.updated_at || product.created_at,
@@ -50,15 +69,6 @@ export class WoocommerceService {
     }
 
     async findOne(id: string) {
-        // Determine if id is UUID or numeric. If numeric, this might fail if DB is UUID. 
-        // WooCommerce IDs are usually numeric, but we use UUID. 
-        // We expect the client to use our UUIDs if they created them, 
-        // OR we might need to support slug lookup if they pass that?
-        // For now, assume ID is passed correctly.
-
-        // Workaround: If the external software passes '123' (numeric), we can't find UUID.
-        // However, existing products have UUIDs.
-
         const { data, error } = await this.supabase
             .from('products')
             .select('*')
@@ -70,14 +80,12 @@ export class WoocommerceService {
     }
 
     async create(createProductDto: any) {
-        // Map WooCommerce Body to Supabase
-        // Generate valid slug from name if not provided
         const slug = createProductDto.slug || createProductDto.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-        // Extract meta_data for custom fields (Hebrew support)
         let price_ils = null;
         let name_he = null;
         let description_he = null;
+        let short_description_he = null;
 
         if (Array.isArray(createProductDto.meta_data)) {
             const meta = createProductDto.meta_data;
@@ -89,6 +97,9 @@ export class WoocommerceService {
 
             const descMeta = meta.find((m: any) => m.key === 'description_he');
             if (descMeta) description_he = descMeta.value;
+
+            const shortDescMeta = meta.find((m: any) => m.key === 'short_description_he');
+            if (shortDescMeta) short_description_he = shortDescMeta.value;
         }
 
         const dbPayload: any = {
@@ -106,10 +117,9 @@ export class WoocommerceService {
         };
 
         if (price_ils !== null) dbPayload.price_ils = price_ils;
-        // We assume name_he/description_he columns might exist or we store them in a JSONB 'translations' or distinct columns?
-        // Based on previous analysis, we only saw price_ils usage. 
-        // If the columns don''t exist, this insert might fail if we include them. 
-        // Let's stick to price_ils for now which is critical.
+        if (name_he !== null) dbPayload.name_he = name_he;
+        if (description_he !== null) dbPayload.description_he = description_he;
+        if (short_description_he !== null) dbPayload.short_description_he = short_description_he;
 
         const { data, error } = await this.supabase
             .from('products')
@@ -141,7 +151,16 @@ export class WoocommerceService {
         if (Array.isArray(updateProductDto.meta_data)) {
             const meta = updateProductDto.meta_data;
             const priceMeta = meta.find((m: any) => m.key === 'price_ils');
-            if (priceMeta) dbPayload.price_ils = parseFloat(priceMeta.value);
+            if (priceMeta) dbPayload.price_ils = parseFloat(priceMeta.value?.toString() || '0');
+
+            const nameMeta = meta.find((m: any) => m.key === 'name_he');
+            if (nameMeta) dbPayload.name_he = nameMeta.value;
+
+            const descMeta = meta.find((m: any) => m.key === 'description_he');
+            if (descMeta) dbPayload.description_he = descMeta.value;
+
+            const shortDescMeta = meta.find((m: any) => m.key === 'short_description_he');
+            if (shortDescMeta) dbPayload.short_description_he = shortDescMeta.value;
         }
 
         const { data, error } = await this.supabase
